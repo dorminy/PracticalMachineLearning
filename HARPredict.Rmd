@@ -1,0 +1,94 @@
+---
+title: "HAR Sensors As A Predictor of Exercise Form"
+output: html_document
+---
+**BACKGROUND**
+Human Activity Recognition - HAR - has emerged as a key research area in the last years and is gaining increasing attention by the pervasive computing research community.  Using devices such as Jawbone Up, Nike FuelBand, and Fitbit, it is now possible to collect a large amount of data about personal activity relatively inexpensively.  Accelerometers were placed on the belt, forearm, arm, and dumbell of 6 study participants. They were then asked to perform barbell lifts correctly and incorrectly in 5 different ways while the accelerometer components were recorded for each. 
+
+**EXECUTIVE SUMMARY**
+The goal of this project is to predict the manner in which the participants did the exercise. The Random Forest model was selected and used to correctly predict the values for 20 different test cases.  
+
+**Initial Analysis**
+An initial look at the data in both the training and prediction data sets shows that they each contain many variables that are unrelated to the measurement of movement. The final data set will contain only data collected from the accelerometers and an outcome variable (classe). 
+
+```{r, message = FALSE, warnings = FALSE}
+library(caret)
+library(randomForest)
+pml.training <- read.csv("pml-training.csv", header=TRUE)
+pml.training$classe<-factor(pml.training$classe)
+is.na(pml.training) <- pml.training == ''
+is.na(pml.training) <- pml.training == '#DIV/0!'
+train <- pml.training[,colSums(is.na(pml.training)) == 0]
+train<-train[,8:60]
+
+pml.testing <- read.csv("pml-testing.csv", header=TRUE)
+is.na(pml.testing) <- pml.testing == ''
+is.na(pml.testing) <- pml.testing == '#DIV/0!'
+test <- pml.testing[,colSums(is.na(pml.testing)) == 0]
+test<-test[,8:59]
+```
+
+Next, the training data was divided into two sets, one for training and one for internal testing.  
+
+```{r, message = FALSE, warnings = FALSE}
+set.seed(123)
+inTrain <- createDataPartition(y=train$classe,p=0.7, list=FALSE)
+training <- train[inTrain,]
+testing <- train[-inTrain,]
+```
+
+The expected outcome for these predictors is a categorical variable, so if we are to use a standard regression model, we will first need to encode "dummy variables" to accomodate the model.  An better way is to  construct a Random Forest, and make predictions with it.
+
+```{r}
+#trainCtrl<-trainControl(method = "cv", 
+#                        number=4)
+#modl <- train(classe ~ ., data = training, 
+#             method = "rf", 
+#             trControl = trainCtrl)
+#modl
+
+modFit <- randomForest(classe ~., training, method = "class")
+prediction<-predict(modFit,testing,type="class")
+confusionMatrix(prediction, testing$classe)
+```
+Random forests were constructed with both the randomForest package and with caret's method="rf".  Both gave very excellent and very similar results.  Because the randomForest package executed faster, it was used for the final model. The confusion matrix shows that very few incorrect predictions were made, yielding a Kappa statistic of 0.9929 and an out of sample error rate = .0012.
+
+```{r}
+zz<-sort(modFit$importance,index=TRUE,decreasing=TRUE)
+importance<-cbind(zz$x,names(training[,zz$ix]))
+importance
+```
+
+Looking at the variable importance, it looks as if a significant number of features can be eliminated.  Executing randomForest's cross-validation cvmodel confirms that somewhere between 26 and 52 features produces very good, almost indistinguishable results.  Elminating  all variables with a score less than 100 from the model leaves 38 features in the model.
+
+```{r}
+nv<-c("roll_belt","yaw_belt","pitch_forearm","magnet_dumbbell_z","magnet_dumbbell_y","pitch_belt","roll_forearm","magnet_dumbbell_x","accel_belt_z","roll_dumbbell","accel_dumbbell_y","magnet_belt_y","magnet_belt_z","accel_dumbbell_z","accel_forearm_x","roll_arm","gyros_belt_z","magnet_forearm_z","magnet_arm_x","total_accel_dumbbell","gyros_dumbbell_y","yaw_dumbbell","accel_dumbbell_x","magnet_belt_x","accel_arm_x","accel_forearm_z","yaw_arm","magnet_arm_y","magnet_forearm_x","magnet_forearm_y","total_accel_belt","magnet_arm_z","pitch_arm","pitch_dumbbell","yaw_forearm","accel_arm_y","accel_forearm_y","classe")
+
+newtraining<-subset(train,select=nv)
+newtesting<-subset(testing,select=nv)
+modFit <- randomForest(classe ~., newtraining, method = "class")
+prediction<-predict(modFit,newtesting,type="class")
+confusionMatrix(prediction, newtesting$classe)
+```
+This prodces a Kappa statistic of 1 and an out of sample error rate = 0!
+
+**PREDICTION** 
+Utilizing the model, the outcomes of the twenty unkown test cases are predicted.
+```{r}
+unkPredict<-predict(modFit,test,type="class")
+unkPredict
+```
+
+**CONCLUSION**
+The original model produced very impressive results, but eliminating features that do not relatively contribute to the end result produces a much better model.
+
+*Appendix*
+
+Plot of Actual Versus Predicted Values
+```{r}
+testQ<-cbind(testing,prediction)
+qplot(testQ$classe,testQ$prediction,geom=c("boxplot", "jitter"),  main="Exercise Performance Analysis",
+xlab="Exercise Type", ylab="Predicted Exercise Type")
+```
+Data set obtained from:
+http://groupware.les.inf.puc-rio.br/static/har/dataset-har-PUC-Rio-ugulino.zip
